@@ -26,6 +26,7 @@ module SitemapGenerator
       # * +video+/+videos+
       # * +geo+
       # * +news+
+      # * +alternates+
       def initialize(path, options={})
         options = options.dup
         if sitemap = path.is_a?(SitemapGenerator::Builder::SitemapFile) && path
@@ -33,8 +34,8 @@ module SitemapGenerator
           path = sitemap.location.path_in_public
         end
 
-        SitemapGenerator::Utilities.assert_valid_keys(options, :priority, :changefreq, :lastmod, :host, :images, :video, :geo, :news, :videos)
-        SitemapGenerator::Utilities.reverse_merge!(options, :priority => 0.5, :changefreq => 'weekly', :lastmod => Time.now, :images => [], :news => {}, :videos => [])
+        SitemapGenerator::Utilities.assert_valid_keys(options, :priority, :changefreq, :lastmod, :host, :images, :video, :geo, :news, :videos, :alternates)
+        SitemapGenerator::Utilities.reverse_merge!(options, :priority => 0.5, :changefreq => 'weekly', :lastmod => Time.now, :images => [], :news => {}, :videos => [], :alternates=>{})
         raise "Cannot generate a url without a host" unless SitemapGenerator::Utilities.present?(options[:host])
         if video = options.delete(:video)
           options[:videos] = video.is_a?(Array) ? options[:videos].concat(video) : options[:videos] << video
@@ -42,6 +43,14 @@ module SitemapGenerator
 
         path = path.to_s.sub(/^\//, '')
         loc  = path.empty? ? options[:host] : (options[:host].to_s.sub(/\/$/, '') + '/' + path)
+        
+        alternatives = options[:alternates].inject({}) do |rslt,lang_path|
+          alt_lang = lang_path[0]
+          alt_path = lang_path[1].to_s.sub(/^\//, '')
+          rslt[alt_lang] = alt_path.empty? ? options[:host] : (options[:host].to_s.sub(/\/$/, '') + '/' + alt_path)
+          rslt
+        end
+
         self.merge!(
           :priority   => options[:priority],
           :changefreq => options[:changefreq],
@@ -51,6 +60,7 @@ module SitemapGenerator
           :images     => prepare_images(options[:images], options[:host]),
           :news       => prepare_news(options[:news]),
           :videos     => options[:videos],
+          :alternates => alternatives,
           :geo        => options[:geo]
         )
       end
@@ -63,6 +73,10 @@ module SitemapGenerator
           builder.lastmod    w3c_date(self[:lastmod])      if self[:lastmod]
           builder.changefreq self[:changefreq]             if self[:changefreq]
           builder.priority   format_float(self[:priority]) if self[:priority]
+
+          self[:alternates].each do |alternate_lang,alternate_url|
+            builder.xhtml :link, :rel => "alternative", :hreflang => alternate_lang, :href => alternate_url
+          end
 
           unless SitemapGenerator::Utilities.blank?(self[:news])
             news_data = self[:news]
